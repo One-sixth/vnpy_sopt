@@ -32,7 +32,7 @@ using namespace pybind11;
 class MdApi :public CThostFtdcMdSpi
 {
 private:
-	CThostFtdcMdApi* api;
+	CThostFtdcMdApi* api = nullptr;
 	thread task_thread;
 	TaskQueue task_queue;
 	bool active = false;

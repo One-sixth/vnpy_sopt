@@ -152,7 +152,7 @@ using namespace pybind11;
 class TdApi :public CThostFtdcTraderSpi
 {
 private:
-	CThostFtdcTraderApi* api;
+	CThostFtdcTraderApi* api = nullptr;
 	thread task_thread;
 	TaskQueue task_queue;
 	bool active = false;

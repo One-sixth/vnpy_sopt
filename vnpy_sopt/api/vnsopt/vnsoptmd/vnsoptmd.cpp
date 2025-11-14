@@ -551,7 +551,10 @@ void MdApi::release()
 
 void MdApi::init()
 {
+	if (this->active)
+        return;
 	this->active = true;
+	this->task_queue.reset();
 	this->task_thread = thread(&MdApi::processTask, this);
 
 	this->api->Init();
@@ -565,6 +568,8 @@ int MdApi::join()
 
 int MdApi::exit()
 {
+	if (!this->active)
+        return 0;
 	this->active = false;
 	this->task_queue.terminate();
 	this->task_thread.join();
