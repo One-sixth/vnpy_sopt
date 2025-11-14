@@ -162,6 +162,7 @@ class SoptGateway(BaseGateway):
         "产品名称": "",
         "授权编码": "",
         "登录超时": "0",  # 单位是秒，默认为0，代表永不超时
+        "连接名": "",  # 留空代表使用 gateway_name 名称
     }
 
     exchanges: list[str] = list(EXCHANGE_SOPT2VT.values())
@@ -191,14 +192,19 @@ class SoptGateway(BaseGateway):
         appid: str = setting["产品名称"]
         auth_code: str = setting["授权编码"]
         login_timeout: int = int(setting["登录超时"])
+        conn_name: str = setting["连接名"]
+
+        if conn_name == "":
+            # 若连接名为空，则使用 gateway_name
+            conn_name = self.gateway_name
 
         if not td_address.startswith("tcp://"):
             td_address = "tcp://" + td_address
         if not md_address.startswith("tcp://"):
             md_address = "tcp://" + md_address
 
-        self.td_api.connect(td_address, userid, password, brokerid, auth_code, appid)
-        self.md_api.connect(md_address, userid, password, brokerid)
+        self.td_api.connect(td_address, userid, password, brokerid, auth_code, appid, conn_name)
+        self.md_api.connect(md_address, userid, password, brokerid, conn_name)
 
         self.init_query()
 
@@ -259,7 +265,7 @@ class SoptGateway(BaseGateway):
         self.query_functions: list = [self.query_account, self.query_position]
         self.event_engine.register(EVENT_TIMER, self.process_timer_event)
 
-    def _login_timeout_check(self, event: Event):
+    def _login_timeout_check(self, event: Event) -> None:
         if self.login_timeout_count > 0:
             self.login_timeout_count -= 1
 
@@ -299,8 +305,8 @@ class SoptMdApi(MdApi):
         self.brokerid: str = ""
 
     @property
-    def gateway_name(self):
-        return self.gateway.gateway_name
+    def gateway_name(self) -> str:
+        return self.gateway.gateway_name    # type: ignore
 
     def onFrontConnected(self) -> None:
         """服务器连接成功回报"""
@@ -398,7 +404,7 @@ class SoptMdApi(MdApi):
 
         self.gateway.on_tick(tick)
 
-    def connect(self, address: str, userid: str, password: str, brokerid: str) -> None:
+    def connect(self, address: str, userid: str, password: str, brokerid: str, conn_name: str) -> None:
         """连接服务器"""
         self.userid = userid
         self.password = password
@@ -406,8 +412,8 @@ class SoptMdApi(MdApi):
 
         # 禁止重复发起连接，会导致异常崩溃
         if not self.connect_status:
-            path: Path = get_folder_path(self.gateway_name.lower())
-            self.createFtdcMdApi((str(path) + "\\Md").encode("GBK"))
+            path: Path = get_folder_path(conn_name)
+            self.createFtdcMdApi((str(path) + "/Md").encode("GBK"))
 
             self.registerFront(address)
             self.init()
@@ -473,8 +479,8 @@ class SoptTdApi(TdApi):
         self.sysid_orderid_map: dict[str, str] = {}
 
     @property
-    def gateway_name(self):
-        return self.gateway.gateway_name
+    def gateway_name(self) -> str:
+        return self.gateway.gateway_name    # type: ignore
 
     def onFrontConnected(self) -> None:
         """服务器连接成功回报"""
@@ -762,7 +768,8 @@ class SoptTdApi(TdApi):
         password: str,
         brokerid: str,
         auth_code: str,
-        appid: str
+        appid: str,
+        conn_name: str,
     ) -> None:
         """连接服务器"""
         self.userid = userid
@@ -772,8 +779,8 @@ class SoptTdApi(TdApi):
         self.appid = appid
 
         if not self.connect_status:
-            path: Path = get_folder_path(self.gateway_name.lower())
-            self.createFtdcTraderApi((str(path) + "\\Td").encode("GBK"))
+            path: Path = get_folder_path(conn_name)
+            self.createFtdcTraderApi((str(path) + "/Td").encode("GBK"), production_mode)
 
             self.subscribePrivateTopic(0)
             self.subscribePublicTopic(0)
