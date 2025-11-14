@@ -160,7 +160,8 @@ class SoptGateway(BaseGateway):
         "交易服务器": "",
         "行情服务器": "",
         "产品名称": "",
-        "授权编码": ""
+        "授权编码": "",
+        "登录超时": "0",  # 单位是秒，默认为0，代表永不超时
     }
 
     exchanges: list[str] = list(EXCHANGE_SOPT2VT.values())
@@ -173,6 +174,7 @@ class SoptGateway(BaseGateway):
         self.md_api: SoptMdApi = SoptMdApi(self)
 
         self.count: int = 0
+        self.login_timeout_count: int = 0
 
     def connect(self, setting: dict) -> None:
         """连接交易接口"""
@@ -188,6 +190,7 @@ class SoptGateway(BaseGateway):
         md_address: str = setting["行情服务器"]
         appid: str = setting["产品名称"]
         auth_code: str = setting["授权编码"]
+        login_timeout: int = int(setting["登录超时"])
 
         if not td_address.startswith("tcp://"):
             td_address = "tcp://" + td_address
@@ -198,6 +201,11 @@ class SoptGateway(BaseGateway):
         self.md_api.connect(md_address, userid, password, brokerid)
 
         self.init_query()
+
+        if login_timeout > 0:
+            # 如果登录等待超时大于0，则超时检查
+            self.login_timeout_count = login_timeout
+            self.event_engine.register(EVENT_TIMER, self._login_timeout_check)
 
     def subscribe(self, req: SubscribeRequest) -> None:
         """订阅行情"""
@@ -250,6 +258,25 @@ class SoptGateway(BaseGateway):
         """初始化查询任务"""
         self.query_functions: list = [self.query_account, self.query_position]
         self.event_engine.register(EVENT_TIMER, self.process_timer_event)
+
+    def _login_timeout_check(self, event: Event):
+        if self.login_timeout_count > 0:
+            self.login_timeout_count -= 1
+
+        elif self.login_timeout_count <= 0:
+            # 登录超时，自动关闭接口
+            self.event_engine.unregister(EVENT_TIMER, self._login_timeout_check)
+            self.write_log("交易登录超时，请检查网络连接和服务器地址是否正确")
+            self.close()
+
+        if self.td_api.login_failed or self.td_api.auth_failed:
+            # 如果是登录失败或授权失败，则自动关闭接口
+            self.event_engine.unregister(EVENT_TIMER, self._login_timeout_check)
+            self.close()
+
+        if self.td_api.login_status:
+            # 登录成功
+            self.event_engine.unregister(EVENT_TIMER, self._login_timeout_check)
 
 
 class SoptMdApi(MdApi):
