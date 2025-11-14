@@ -171,3 +171,8 @@ else  # Linux
     install_dir: py.get_install_dir() / 'vnpy_sopt/api'
   )
 endif
+
+# 复制依赖的动态库文件到build目录，此时可编辑模式能找到dll
+foreach lib : api_libs
+  run_command(python_cmd, meson.current_source_dir() / 'copy-wrap.py', meson.current_source_dir() /  lib, meson.project_build_root(), check: true)
+endforeach
