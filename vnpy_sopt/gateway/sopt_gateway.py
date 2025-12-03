@@ -780,7 +780,7 @@ class SoptTdApi(TdApi):
 
         if not self.connect_status:
             path: Path = get_folder_path(conn_name)
-            self.createFtdcTraderApi((str(path) + "/Td").encode("GBK"), production_mode)
+            self.createFtdcTraderApi((str(path) + "/Td").encode("GBK"))
 
             self.subscribePrivateTopic(0)
             self.subscribePublicTopic(0)
