@@ -1,3 +1,4 @@
+import sys
 from pathlib import Path
 from datetime import datetime
 from time import sleep
@@ -140,6 +141,7 @@ ACTIVE_SOPT2VT: dict[str, bool] = {
 }
 
 # 其他常量
+MAX_FLOAT = sys.float_info.max                  # 浮点数极限值
 CHINA_TZ = ZoneInfo("Asia/Shanghai")       # 中国时区
 
 # 合约数据全局缓存字典
@@ -650,6 +652,12 @@ class SoptTdApi(TdApi):
                 product=product,
                 size=data["VolumeMultiple"],
                 pricetick=data["PriceTick"],
+                min_volume=data["MinLimitOrderVolume"],
+                max_volume=data["MaxLimitOrderVolume"],
+                long_margin_ratio=adjust_price(data["LongMarginRatio"], None),
+                short_margin_ratio=adjust_price(data["ShortMarginRatio"], None),
+                listed_date=_to_datetime(data["OpenDate"]),
+                expire_date=_to_datetime(data["ExpireDate"]),
                 gateway_name=self.gateway_name
             )
             contract.extra = {"trading_active": True}
@@ -667,6 +675,11 @@ class SoptTdApi(TdApi):
                 contract.option_strike = data["StrikePrice"]
                 contract.option_expiry = datetime.strptime(data["ExpireDate"], "%Y%m%d")
                 contract.option_index = get_option_index(contract.option_strike, data["InstrumentCode"])
+
+                # 期权卖出的保证金率目前没法获得，大概设定为 0.1
+                # 期权买入的保证金都是0
+                contract.short_margin_ratio = 0.1
+                contract.long_margin_ratio = 0
 
             self.gateway.on_contract(contract)
 
@@ -704,6 +717,11 @@ class SoptTdApi(TdApi):
 
         tp: tuple = (data["OrderPriceType"], data["TimeCondition"], data["VolumeCondition"])
 
+        status: Status = STATUS_SOPT2VT.get(data["OrderStatus"])
+        if data["OrderStatus"] == THOST_FTDC_OST_Canceled and data["StatusMsg"] != "已撤单":
+            status = Status.REJECTED
+            self.gateway.write_log(f"交易委托 {orderid} 被拒，原因：{data['StatusMsg']}")
+
         order: OrderData = OrderData(
             symbol=symbol,
             exchange=contract.exchange,
@@ -714,7 +732,7 @@ class SoptTdApi(TdApi):
             price=data["LimitPrice"],
             volume=data["VolumeTotalOriginal"],
             traded=data["VolumeTraded"],
-            status=STATUS_SOPT2VT[data["OrderStatus"]],
+            status=status,
             datetime=dt,
             gateway_name=self.gateway_name
         )
@@ -950,3 +968,16 @@ def get_option_index(strike_price: float, exchange_instrument_id: str) -> str:
     option_index: str = f"{strike_price:.3f}-{index}"
 
     return option_index
+
+
+def adjust_price(price: float, default: float | int | None=0) -> float:
+    """将异常的浮点数最大值（MAX_FLOAT）数据调整为0"""
+    if price == MAX_FLOAT:
+        price = default
+    return price
+
+
+def _to_datetime(s: str) -> datetime | None:
+    if s.strip() == '':
+        return None
+    return datetime.strptime(s, "%Y%m%d").replace(tzinfo=CHINA_TZ)
